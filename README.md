@@ -6,6 +6,7 @@ This is a [LiveSplit](https://livesplit.org/) autosplitter made for *Backrooms: 
 
 ## Installation & Usage
 *Autosplitters can use a good deal processing power, which may result in a decline of game and/or overall system performance. Use at your own risk.*
+
 Runs starting from Level 0 can have start time at "-29.6"
 
 ### Prerequisites

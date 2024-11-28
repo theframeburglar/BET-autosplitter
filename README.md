@@ -17,9 +17,8 @@ Runs starting from Level 0 can have start time at "-29.6"
 1. Right click Livesplit > Edit Splits
 2. Type "Backrooms: Escape Together" into the game name. The window should update to say "Auto splitter and load removal is available".
 3. Click the Activate button if it is not already activated. 
-4. Click the Settings button to open the autosplitter settings. Tick the checkbox of any settings that you want to use. Hit OK to save.
-6. In the splits editor, you should have one split per level; the autosplitter will split on each level.
-7. Hit OK to save settings.
+5. In the splits editor, you should have one split per level; the autosplitter will split on each level.
+6. Hit OK to save settings.
 
 ### Manual Installation
 1. Download from the [Releases](https://github.com/jonetiz/ETB-Autosplitter/releases) page.

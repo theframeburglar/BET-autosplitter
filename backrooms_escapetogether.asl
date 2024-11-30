@@ -401,9 +401,14 @@ shutdown
 
 onReset
 {
-	// NOTE: Resetting after the game closes will crash the autosplitter? maybe
-	memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
-	memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0);
-	memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0);
-	vars.watchers["matchState"].Current = 0x0;
+	try
+	{
+		memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
+		memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0);
+		memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0);
+		vars.watchers["matchState"].Current = 0x0;
+	}
+	catch
+	{
+	}
 }

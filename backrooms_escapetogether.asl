@@ -14,7 +14,7 @@
 	"settings" is an object used to add or get settings 
 */
 
-state("betgame-Win64-Shipping", "0.8.0")
+state("betgame-Win64-Shipping", "0.8.0+")
 {
 
 }
@@ -32,6 +32,7 @@ init
 	// Keep last one as 0 so we know when to stop
 	// 0.8.0 - escape level_run
 	// sp 0000000095F6E373
+	// sp 000001FA26A9C400 
 	var UUIDs = new ulong[] {0x0000000095F6E373, 0};
 	vars.arrUUIDs = game.AllocateMemory(8 * UUIDs.Length);
 	
@@ -54,20 +55,21 @@ init
 	{
 		memory.WriteValue<byte>((IntPtr)(vars.Level_0Addr + (i * 2)), (byte)vars.Level_0[i]);
 		memory.WriteValue<byte>((IntPtr)(vars.Level_0Addr + (i * 2) + 1), 0);
-	}
+	}	
 	var scanner = new SignatureScanner(game, game.MainModule.BaseAddress, modules.First().ModuleMemorySize);
 
 
-	version = "0.8.0";
+	version = "0.8.0+";
 
 	print("[BET Autosplitter] DEBUG: BET Autosplitter loaded");
 
 	// Match State hook -- Tells us the current state of the match
 	IntPtr ptrmatchStateAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
-	//48 8B 4C 24 20 48 8B 7C 24 68 48 8B 6C 24 50
+	//48 8B 4C 24 20 48 8B 7C 24 ?? 48 8B ?? 24 50 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 54 24 ??
 	"48 8B 4C 24 20", // mov rcx, qword ptr ss:[rsp+0x20]
-	"48 8B 7C 24 68", // mov rdi, qword ptr ss:[rsp+0x68]
-	"48 8B 6C 24 50" // mov rbp, qword ptr ss:[rsp+0x50]
+	"48 8B 7C 24 ??", // mov rdi, qword ptr ss:[rsp+0x??]
+	"48 8B ?? 24 50", // mov ??, qword ptr ss:[rsp+0x50]
+	"48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 54 24 ??"
 	));
 	
 	if (ptrmatchStateAddr == IntPtr.Zero)
@@ -86,18 +88,30 @@ init
 	vars.matchStateDetour = vars.matchState + 8; // skip over the first two bytes plus 16 to account for our map strings		
 	vars.watchers.Add(new MemoryWatcher<ulong>(new DeepPointer((IntPtr)vars.matchState)){ Name = "matchState" });
 	
+	// Offset bytes
+	byte byte1 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 4)) + 0x10);
+	byte byte2 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 9)) + 0x10);
+	byte byte3 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 14)) + 0x10);
+	
+	// Register byte
+	byte bytereg = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 12)));
+	
+	print("Current: " + byte1.ToString());
+	print("Current: " + byte2.ToString());
+	print("Current: " + byte3.ToString());
 	var matchStateDetourBytes = new byte[]
 	{
-		// Check to see what map we are loading
+		// Check to see new match state
 		0x50, // push rax
-		0x48, 0x8b, 0x45, 0x00, // movsxd rax, dword ptr ds:[rbp]
-		0x48, 0x89, 0x05, 0xEC, 0xFF, 0xFF, 0xFF,// mov [string1], rax
+		0x48, 0x8b, 0x44, 0x24, 0x48, // movsxd rax, dword ptr ds:[rsp+0x30]
+		0x48, 0x8b, 0x00, // mov rax, [rax]
+		0x48, 0x89, 0x05, 0xE8, 0xFF, 0xFF, 0xFF,// mov [string1], rax
 		// original instructions
 		0x58, // pop rax
 		// add 8 to original instructions since they reference RSP and we pushed to the stack
-		0x48, 0x8B, 0x4C, 0x24, 0x30, // mov rcx, qword ptr ss:[rsp+0x20 + 0x10]
-		0x48, 0x8B, 0x7C, 0x24, 0x78, // mov rdi, qword ptr ss:[rsp+0x68 + 0x10]
-		0x48, 0x8B, 0x6C, 0x24, 0x60, // mov rbp, qword ptr ss:[rsp+0x50 + 0x10]
+		0x48, 0x8B, 0x4C, 0x24, byte1, // mov rcx, qword ptr ss:[rsp+0x?? + 0x10]
+		0x48, 0x8B, 0x7C, 0x24, byte2, // mov rdi, qword ptr ss:[rsp+0x?? + 0x10]
+		0x48, 0x8B, bytereg, 0x24, byte3, // mov ??, qword ptr ss:[rsp+0x?? + 0x10]
 		0xC3 // ret
 	};
 	
@@ -117,8 +131,8 @@ init
 	
 	// isChangingLevel hook -- Tells if we are changing levels
 	IntPtr ptrisChangingLevelAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
-	//48 8B 4C 24 20 48 8B 7C 24 68 48 8B 6C 24 50
-	"49 8D 97 C0 00 00 00", // lea rdx, ds:[r15+0xC0]
+	//49 8d ?? C0 00 00 00 41 83 F1 01 48 8D 4C 24 40
+	"49 8D ?? C0 00 00 00", // lea rdx, ds:[??+0xC0]
 	"41 83 F1 01", // xor r9d, 0x01
 	"48 8D 4C 24 40" // lea rcx, ss:[rsp+0x40]
 	));
@@ -139,6 +153,43 @@ init
 	vars.isChangingLevelDetour = vars.isChangingLevel + 2 + 8 + 8; // skip over the first two bytes plus 16 to account for our map strings	
 	vars.watchers.Add(new MemoryWatcher<byte>(new DeepPointer((IntPtr)vars.isChangingLevel)){ Name = "isChangingLevel" });
 	
+	byte byte4 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrisChangingLevelAddr + 2)));
+	byte byte5 = 0;
+	byte byte6 = 0;
+	if (byte4 == 0x97)
+	{
+		// 0x97 means r15
+		byte5 = 0xB7;
+		byte6 = 0x8F;
+	}
+	else if (byte4 == 0x95)
+	{
+		// 0x95 means r13
+		byte5 = 0xB5;
+		byte6 = 0x8D;
+	}
+	
+	byte byte7 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrisChangingLevelAddr - 13)));
+	byte byte8 = 0;
+	byte byte9 = 0;
+	byte byte10 = 0;
+	byte byte11 = 0;
+	if (byte7 == 0x06)
+	{
+		// 0x06 means r14
+		byte8 = 0x4C;
+		byte9 = 0xF7;
+		byte10 = 0x49;
+		byte11 = 0x3E;
+	}
+	else if (byte7 == 0x03)
+	{
+		// 0x03 means rbx
+		byte8 = 0x48;
+		byte9 = 0xDf;
+		byte10 = 0x48;
+		byte11 = 0x3f;
+	}
 	var isChangingLevelDetourBytes = new byte[]
 	{
 		// Check to see what map we are loading
@@ -146,18 +197,18 @@ init
 		0x56, // push rsi
 		0x51, // push rcx
 		0x52, // push rdx
-		0x48, 0x89, 0xDF, // mov rdi, rbx
-		0x49, 0x8D, 0xB7, 0xE8, 0x00, 0x00, 0x00, // lea rsi, ds:[r15+0xE8] -- address of &unreal + 0x28 for current level
-		0x49, 0x63, 0x8F, 0xF0, 0x00, 0x00, 0x00,// movsxd rcx, dword ptr ds:[r15+0xF0]
+		byte8, 0x89, byte9, // mov rdi, ??
+		0x49, 0x8D, byte5, 0xE8, 0x00, 0x00, 0x00, // lea rsi, ds:[r15+0xE8] -- address of &unreal + 0x28 for current level
+		0x49, 0x63, byte6, 0xF0, 0x00, 0x00, 0x00,// movsxd rcx, dword ptr ds:[r15+0xF0]
 		0x80, 0xe9, 0x01, // sub cl, 1
 		0x48, 0xD1, 0xE1, // shl rcx, 0x01
-		0x48, 0x8B, 0x3F, // mov rdi, qword ptr ds:[rdi]
+		byte10, 0x8B, byte11, // mov rdi, qword ptr ds:[??]
 		0x48, 0x8B, 0x36, // mov rsi, qword ptr ds:[rsi]
 		0xF3, 0xA6, // repe cmpsb
 		0x74, 0x50, //je blah -- if the strings are the same then don't set variable
 		// now check to see if we're going to the main menu
 		0x48, 0x89, 0xDF, // mov rdi, rbx
-		0x48, 0x8B, 0x3F, // mov rdi, qword ptr ds:[rdi]
+		byte10, 0x8B, byte11, // mov rdi, qword ptr ds:[??]
 		0xE8, 0x00, 0x00, 0x00, 0x00,// call 0
 		0x5E, // pop rsi
 		0x48, 0x83, 0xEE, 0x40, //sub rsi, 0x38
@@ -168,7 +219,7 @@ init
 		//0x66, 0xC7, 0x05, 0xAA, 0xFF, 0xFf, 0xFF, 0x01, 0x00,// mov [var], 1
 		// now check to see if we're going to level_0
 		0x48, 0x89, 0xDF, // mov rdi, rbx
-		0x48, 0x8B, 0x3F, // mov rdi, qword ptr ds:[rdi]
+		byte10, 0x8B, byte11, // mov rdi, qword ptr ds:[??]
 		0xE8, 0x00, 0x00, 0x00, 0x00,// call 0
 		0x5E, // pop rsi
 		0x48, 0x83, 0xEE, 0x56, //sub rsi, 0x38
@@ -185,7 +236,7 @@ init
 		0x5E, // pop rax
 		0x5F, // pop rax
 		// add 8 to original instructions since they reference RSP and we pushed to the stack
-		0x49, 0x8D, 0x97, 0xC0, 0x00, 0x00, 0x00, // lea rdx, ds:[r15+0xC0]
+		0x49, 0x8D, byte4, 0xC0, 0x00, 0x00, 0x00, // lea rdx, ds:[r15+0xC0]
 		0x41, 0x83, 0xF1, 0x01, // xor r9d, 0x01
 		0x48, 0x8D, 0x4C, 0x24, 0x50, // lea rcx, ss:[rsp+0x40 + 0x10]
 		0xC3 // ret
@@ -208,13 +259,14 @@ init
 	
 	// Place hook on FLatentActionManager::AddNewAction	 
 	IntPtr ptrIsExitingZoneAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
-	//0F 11 47 10 0F 11 47 20 0F 11 47 30 0F 11 47 40 48 89 47 ?? C7 47
-	"0F 11 47 10",// movups xmmword ptr ds:[rdi+0x10], xmm0
-	"0F 11 47 20", // movups xmmword ptr ds:[rdi+0x20], xmm0
-	"0F 11 47 30", // movups xmmword ptr ds:[rdi+0x30], xmm0
-	"0F 11 47 40", // movups xmmword ptr ds:[rdi+0x40], xmm0
-	"48 89 47 ??", // mov qword ptr ds:[rdi+0x50], rax
-	"C7 47" // mov dword ptr ds:[rdi+0x2C], 0x80
+	//53 55
+	"53",// push rbx
+	"55", // push rbp
+	"41 56", // push r14
+	"48 83 EC 50", // sub rsp, 0x50
+	"48 8B D9", // mov rbx, rcx
+	"48 C7 44 24 78 00 00 00 00", // mov qword ptr ss:[rsp+0x78], 0x00
+	"48 8D 4C 24 78" // lea rcx, ss:[rsp+0x78]
 	));
 	
 	if (ptrIsExitingZoneAddr == IntPtr.Zero)
@@ -223,6 +275,7 @@ init
 		throw new Exception("Could not find ptrIsExitingZoneAddr detour!");
 	}
 
+	// isExitingZone == 2 means we already split but need to wait for level change
 	// isExitingZone == 1 means exiting zone
 	// isExitingZone == 0 means not exiting zone
 	
@@ -230,16 +283,16 @@ init
 	memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0); // Set isExitingZone to 0 which is the default "not exiting" state
 	memory.WriteValue<ulong>((IntPtr)vars.isExitingZone + 2, (ulong)vars.arrUUIDs); // Set isExitingZone to 0 which is the default "not exiting" state
 	vars.isExitingZoneDetour = vars.isExitingZone + 2 + 8; // skip over the first 2 bytes plus 8 for our array address
-	vars.watchers.Add(new MemoryWatcher<bool>(new DeepPointer((IntPtr)vars.isExitingZone)){ Name = "isExitingZone" });
+	vars.watchers.Add(new MemoryWatcher<byte>(new DeepPointer((IntPtr)vars.isExitingZone)){ Name = "isExitingZone" });
 	var isExitingZoneDetourBytes = new byte[]
 	{
 		0x53,//push rbx
 		0x50,//push rax
-		0x41, 0x50, // push r8
+//		0x41, 0x50, // push r8
 		0x57, //push rdi
 		0x48, 0x31, 0xc0,// xor rax, rax
-		0x48, 0x8b, 0x1d, 0xE9, 0xFF, 0xFF, 0xFF,//mov rbx, array
-		0x4c, 0x8B, 0x44, 0x24, 0x38, // mov r8, qword ptr ss:[rsp+0x38]
+		0x48, 0x8b, 0x1d, 0xEB, 0xFF, 0xFF, 0xFF,//mov rbx, array
+//		0x4c, 0x8B, 0x44, 0x24, 0x38, // mov r8, qword ptr ss:[rsp+0x38]
 		// loop
 		0x48, 0x8b, 0x3c, 0x03,// mov rdi, [rbx + rax]
 		0x48, 0x83, 0xff, 0x00,// cmp rdi, 0
@@ -248,30 +301,32 @@ init
 		0x74, 0x06,//je set
 		0x48, 0x83, 0xc0, 0x08,// add rax,8
 		0xeb, 0xeb,//jmp loop
-		0x66, 0xC7, 0x05, 0xC4, 0xFF, 0xFF, 0xFF, 0x01, 0x00,	// mov word ptr ds:[7FF78D6366BD],1 (set isExitingZone to 1)
+		0x66, 0xC7, 0x05, 0xCB, 0xFF, 0xFF, 0xFF, 0x01, 0x00,	// mov word ptr ds:[7FF78D6366BD],1 (set isExitingZone to 1)
 		0x5F, // pop rdi
-		0x41, 0x58, //pop r8
+//		0x41, 0x58, //pop r8
 		0x58, //pop rax
 		0x5b, //pop rbx
 		// original instructions
-		0x0F, 0x11, 0x47, 0x10,// movups xmmword ptr ds:[rdi+0x10], xmm0
-		0x0F, 0x11, 0x47, 0x20, // movups xmmword ptr ds:[rdi+0x20], xmm0
-		0x0F, 0x11, 0x47, 0x30, // movups xmmword ptr ds:[rdi+0x30], xmm0
-		0x0F, 0x11, 0x47, 0x40, // movups xmmword ptr ds:[rdi+0x40], xmm0
+		0x48, 0x8B, 0xD9,// mov rbx, rcx
+		0x48, 0xC7, 0x84, 0x24, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov qword ptr ss:[rsp+0x78 + 0x8 - 0x50 - 0x18], 0x00
+		0x48, 0x8D, 0x8C, 0x24, 0x18, 0x00, 0x00, 0x00, // lea rcx, ss:[rsp+0x78 + 0x8 - 0x50 - 0x18]
 		0xC3 // ret
 	};
 	
 	// bytes to detour load start function
 	var isExitingZoneHookBytes = new List<byte>()
 	{
-		//0x57,														// push rdi
+		//0x50,														// push rax
 		0x48, 0xB8													// mov rax, jumploc
 	};
 	isExitingZoneHookBytes.AddRange(BitConverter.GetBytes((ulong)vars.isExitingZoneDetour));
 	isExitingZoneHookBytes.AddRange(new byte[] {
-		0xFF, 0xD0,													// call rdi 
-		//0x5F,														// pop rdi														
-		0x90, 0x90
+		0xFF, 0xD0,													// call rax 
+		0x53, 
+		0x55,
+		0x41, 0x56,
+		0x48, 0x83, 0xEC, 0x50,
+		0x90, 0x90, 0x90, 0x90, 0x90
 	});
 	
 	try
@@ -338,23 +393,43 @@ start
 			
 			return false;
 		}
+		else if (vars.watchers["isChangingLevel"].Current == 1)
+		{
+			memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
+			memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0); // Set isChangingLevel to 0
+			vars.watchers["matchState"].Current = 0x0;
+			vars.watchers["matchState"].Old = 0x0;
+			vars.watchers["isChangingLevel"].Current = 0;
+			return true;
+		}
 		else
 		{
+			print("blah!!!1");
 			if(vars.watchers["matchState"].Current == 0x007600610065004C)
 			{
+				print("blah!!!2");
 				// If state is LeavingMap then ignore it and set it back to 0
 				memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
 				vars.watchers["matchState"].Current = 0x0;
 				vars.watchers["matchState"].Old = 0x0;
 				return false;
 			}
-			if(vars.watchers["matchState"].Current == 0x0065006A0062004F && vars.watchers["matchState"].Old == 0x0)
+			//if(vars.watchers["matchState"].Current == 0x0065006A0062004F && vars.watchers["matchState"].Old == 0x0)
+			//{
+			//	print("blah!!!3");
+			//	memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
+			//	vars.watchers["matchState"].Current = 0x0;
+			//	vars.watchers["matchState"].Old = 0x0;
+			//	return false;
+			//}
+			if(vars.watchers["matchState"].Current == 0x0074006900610057 && vars.watchers["matchState"].Old == 0x0)
 			{
 				memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
 				vars.watchers["matchState"].Current = 0x0;
 				vars.watchers["matchState"].Old = 0x0;
 				return false;
 			}
+			print("blah!!!4");
 			memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
 			memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0); // Set isChangingLevel to 0
 			vars.watchers["matchState"].Current = 0x0;
@@ -374,12 +449,18 @@ split
 	{
 		vars.watchers["isChangingLevel"].Current = 0;
 		memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0); // Set isChangingLevel to 0
+		if (vars.watchers["isExitingZone"].Current == 0x02)
+		{
+			vars.watchers["isExitingZone"].Current = 0x00;
+			memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0); // Set isExitingZone to 0
+			return false;
+		}
 		return true;
 	}
-	if (vars.watchers["isExitingZone"].Current)
+	if (vars.watchers["isExitingZone"].Current == 0x01)
 	{
-		vars.watchers["isExitingZone"].Current = false;
-		memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0); // Set isExitingZone to 0
+		vars.watchers["isExitingZone"].Current = 0x02;
+		memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 2); // Set isExitingZone to 2
 		return true;
 	}
 

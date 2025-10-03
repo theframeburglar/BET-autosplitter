@@ -260,19 +260,33 @@ init
 	// Place hook on FLatentActionManager::AddNewAction	 
 	IntPtr ptrIsExitingZoneAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
 	//53 55
-	"53",// push rbx
-	"55", // push rbp
-	"41 56", // push r14
-	"48 83 EC 50", // sub rsp, 0x50
-	"48 8B D9", // mov rbx, rcx
-	"48 C7 44 24 78 00 00 00 00", // mov qword ptr ss:[rsp+0x78], 0x00
-	"48 8D 4C 24 78" // lea rcx, ss:[rsp+0x78]
+	"4C 89 4C 24 20",// mov qword ptr ss:[rsp+0x20], r9
+	"44 89 44 24 18", // mov dword ptr ss:[rsp+0x18], r8d
+	"53", // push rbp
+	"55", // push rbx
+	"41 56" // push r14
 	));
 	
+	byte exitbyte1 = 0x53;
+	byte exitbyte2 = 0x55;
 	if (ptrIsExitingZoneAddr == IntPtr.Zero)
 	{
-		game.Resume();
-		throw new Exception("Could not find ptrIsExitingZoneAddr detour!");
+		ptrIsExitingZoneAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
+		//53 55
+		"4C 89 4C 24 20",// mov qword ptr ss:[rsp+0x20], r9
+		"44 89 44 24 18", // mov dword ptr ss:[rsp+0x18], r8d
+		"55", // push rbp
+		"53", // push rbx
+		"57", // push rdi
+		"41 56" // push r14
+		));
+		if (ptrIsExitingZoneAddr == IntPtr.Zero)
+		{
+			game.Resume();
+			throw new Exception("Could not find ptrIsExitingZoneAddr detour!");
+		}
+		exitbyte1 = 0x55;
+		exitbyte2 = 0x53;
 	}
 
 	// isExitingZone == 2 means we already split but need to wait for level change
@@ -307,9 +321,11 @@ init
 		0x58, //pop rax
 		0x5b, //pop rbx
 		// original instructions
-		0x48, 0x8B, 0xD9,// mov rbx, rcx
-		0x48, 0xC7, 0x84, 0x24, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov qword ptr ss:[rsp+0x78 + 0x8 - 0x50 - 0x18], 0x00
-		0x48, 0x8D, 0x8C, 0x24, 0x18, 0x00, 0x00, 0x00, // lea rcx, ss:[rsp+0x78 + 0x8 - 0x50 - 0x18]
+		0x4C, 0x89, 0x4C, 0x24, 0x28,// mov qword ptr ss:[rsp+0x20 + 0x8], r9
+		0x44, 0x89, 0x44, 0x24, 0x20, // mov dword ptr ss:[rsp+0x18 + 0x8], r8d
+		0x58, // pop rax
+		exitbyte1, exitbyte2,
+		0x50, // push rax
 		0xC3 // ret
 	};
 	
@@ -321,12 +337,7 @@ init
 	};
 	isExitingZoneHookBytes.AddRange(BitConverter.GetBytes((ulong)vars.isExitingZoneDetour));
 	isExitingZoneHookBytes.AddRange(new byte[] {
-		0xFF, 0xD0,													// call rax 
-		0x53, 
-		0x55,
-		0x41, 0x56,
-		0x48, 0x83, 0xEC, 0x50,
-		0x90, 0x90, 0x90, 0x90, 0x90
+		0xFF, 0xD0													// call rax 
 	});
 	
 	try

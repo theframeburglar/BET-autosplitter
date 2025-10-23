@@ -18,7 +18,10 @@ state("betgame-Win64-Shipping", "0.8.0+")
 {
 
 }
+state("BETGameSteam-Win64-Shipping", "0.8.0+")
+{
 
+}
 startup
 {
 	//settings.Add("disable_restart_time_removal", false, "Disable pausing of autosplitter when restarting levels");
@@ -504,3 +507,4 @@ onReset
 	{
 	}
 }
+

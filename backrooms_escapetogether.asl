@@ -29,7 +29,7 @@ startup
 
 init
 {
-	game.Suspend();
+	game.Suspend();//
 	
 	// Latent action UUIDs to check
 	// Keep last one as 0 so we know when to stop
@@ -68,9 +68,9 @@ init
 
 	// Match State hook -- Tells us the current state of the match
 	IntPtr ptrmatchStateAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
-	//48 8B 4C 24 20 48 8B 7C 24 ?? 48 8B ?? 24 50 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 54 24 ??
+	//48 8B 4C 24 20 48 8B ?? 24 ?? 48 8B ?? 24 50 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 54 24 ??
 	"48 8B 4C 24 20", // mov rcx, qword ptr ss:[rsp+0x20]
-	"48 8B 7C 24 ??", // mov rdi, qword ptr ss:[rsp+0x??]
+	"48 8B ?? 24 ??", // mov ??(old rdi), qword ptr ss:[rsp+0x??]
 	"48 8B ?? 24 50", // mov ??, qword ptr ss:[rsp+0x50]
 	"48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B 54 24 ??"
 	));
@@ -90,14 +90,15 @@ init
 	memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0 which is the default "not loading" state
 	vars.matchStateDetour = vars.matchState + 8; // skip over the first two bytes plus 16 to account for our map strings		
 	vars.watchers.Add(new MemoryWatcher<ulong>(new DeepPointer((IntPtr)vars.matchState)){ Name = "matchState" });
-	
+	vars.hasLeftMap = false;
 	// Offset bytes
 	byte byte1 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 4)) + 0x10);
 	byte byte2 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 9)) + 0x10);
 	byte byte3 = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 14)) + 0x10);
 	
 	// Register byte
-	byte bytereg = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 12)));
+	byte byteregfirst = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 7)));
+	byte byteregsecond = (byte)(memory.ReadValue<byte>((IntPtr)((ulong)ptrmatchStateAddr + 12)));
 	
 	print("Current: " + byte1.ToString());
 	print("Current: " + byte2.ToString());
@@ -113,8 +114,8 @@ init
 		0x58, // pop rax
 		// add 8 to original instructions since they reference RSP and we pushed to the stack
 		0x48, 0x8B, 0x4C, 0x24, byte1, // mov rcx, qword ptr ss:[rsp+0x?? + 0x10]
-		0x48, 0x8B, 0x7C, 0x24, byte2, // mov rdi, qword ptr ss:[rsp+0x?? + 0x10]
-		0x48, 0x8B, bytereg, 0x24, byte3, // mov ??, qword ptr ss:[rsp+0x?? + 0x10]
+		0x48, 0x8B, byteregfirst, 0x24, byte2, // mov rdi, qword ptr ss:[rsp+0x?? + 0x10]
+		0x48, 0x8B, byteregsecond, 0x24, byte3, // mov ??, qword ptr ss:[rsp+0x?? + 0x10]
 		0xC3 // ret
 	};
 	
@@ -131,7 +132,7 @@ init
 		0x90
 	});
 	
-	
+	// look for L"LoadingScreen was visible for"
 	// isChangingLevel hook -- Tells if we are changing levels
 	IntPtr ptrisChangingLevelAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
 	//49 8d ?? C0 00 00 00 41 83 F1 01 48 8D 4C 24 40
@@ -285,11 +286,29 @@ init
 		));
 		if (ptrIsExitingZoneAddr == IntPtr.Zero)
 		{
-			game.Resume();
-			throw new Exception("Could not find ptrIsExitingZoneAddr detour!");
+			ptrIsExitingZoneAddr = scanner.Scan(new SigScanTarget(0, // target the 0th bytes
+			//53 55
+			"4C 89 4C 24 20",// mov qword ptr ss:[rsp+0x20], r9
+			"44 89 44 24 18", // mov dword ptr ss:[rsp+0x18], r8d
+			"53", // push rbx
+			"57" // push rdi
+			));
+			if (ptrIsExitingZoneAddr == IntPtr.Zero)
+			{
+				game.Resume();
+				throw new Exception("Could not find ptrIsExitingZoneAddr detour!");
+			}
+			else
+			{
+				exitbyte1 = 0x53;
+				exitbyte2 = 0x57;
+			}
 		}
-		exitbyte1 = 0x55;
-		exitbyte2 = 0x53;
+		else
+		{
+			exitbyte1 = 0x55;
+			exitbyte2 = 0x53;
+		}
 	}
 
 	// isExitingZone == 2 means we already split but need to wait for level change
@@ -392,7 +411,6 @@ start
 	{
 		if(vars.watchers["isChangingLevel"].Current == 2)
 		{
-			print("blah!!!");
 			// We are loading level_0
 			
 			if (vars.watchers["matchState"].Current == 0x0065006D00610047 || vars.watchers["matchState"].Current == 0x0065006A0062004F) //GameStarted
@@ -418,10 +436,8 @@ start
 		}
 		else
 		{
-			print("blah!!!1");
 			if(vars.watchers["matchState"].Current == 0x007600610065004C)
 			{
-				print("blah!!!2");
 				// If state is LeavingMap then ignore it and set it back to 0
 				memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
 				vars.watchers["matchState"].Current = 0x0;
@@ -443,7 +459,6 @@ start
 				vars.watchers["matchState"].Old = 0x0;
 				return false;
 			}
-			print("blah!!!4");
 			memory.WriteValue<ulong>((IntPtr)vars.matchState, 0); // Set matchState to 0
 			memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0); // Set isChangingLevel to 0
 			vars.watchers["matchState"].Current = 0x0;
@@ -485,8 +500,14 @@ isLoading
 {	
 	if (vars.watchers["matchState"].Current == 0x007600610065004C)
 	{
+		vars.hasLeftMap = true;
 		return true;
 	}
+	if (vars.hasLeftMap == true && vars.watchers["matchState"].Current != 0x0074006900610057)
+	{
+		return true;
+	}
+	vars.hasLeftMap = false;
 	return false;
 }
 
@@ -502,9 +523,9 @@ onReset
 		memory.WriteValue<byte>((IntPtr)vars.isChangingLevel, 0);
 		memory.WriteValue<byte>((IntPtr)vars.isExitingZone, 0);
 		vars.watchers["matchState"].Current = 0x0;
+		vars.hasLeftMap = false;
 	}
 	catch
 	{
 	}
 }
-
